@@ -11,14 +11,27 @@ terraform {
 }
 
 variable "prefix" {
-  type = string
+  type        = string
+  description = "Prefix for the random pet name"
+}
+
+variable "length" {
+  type        = number
+  description = "Number of words in the pet name"
+  default     = 3
 }
 
 resource "random_pet" "this" {
   prefix = var.prefix
-  length = 3
+  length = var.length
 }
 
 output "name" {
-  value = random_pet.this.id
+  description = "The full pet name (prefix + random words)"
+  value       = random_pet.this.id
+}
+
+output "id" {
+  description = "The unique ID of the random_pet resource"
+  value       = random_pet.this.id
 }

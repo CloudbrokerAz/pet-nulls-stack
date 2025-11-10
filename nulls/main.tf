@@ -11,21 +11,47 @@ terraform {
 }
 
 variable "pet" {
-  type = string
+  type        = string
+  description = "Pet name from upstream component (creates dependency)"
 }
 
 variable "instances" {
-  type = number
+  type        = number
+  description = "Number of null_resource instances to create"
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags to apply (stored in triggers for demonstration)"
+  default     = {}
 }
 
 resource "null_resource" "this" {
   count = var.instances
 
   triggers = {
-    pet = var.pet
+    pet             = var.pet
+    instance_number = count.index
+    timestamp       = timestamp()
+    # Store tags as JSON in triggers to demonstrate lifecycle
+    tags_json       = jsonencode(var.tags)
   }
 }
 
 output "ids" {
-  value = [for n in null_resource.this: n.id]
+  description = "List of null_resource IDs"
+  value       = [for n in null_resource.this : n.id]
+}
+
+output "count" {
+  description = "Number of null_resources created"
+  value       = length(null_resource.this)
+}
+
+output "triggers" {
+  description = "Trigger values that cause recreation"
+  value = {
+    pet = var.pet
+    count = var.instances
+  }
 }
