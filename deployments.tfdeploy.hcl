@@ -3,10 +3,9 @@
 # ============================================================================
 # This file demonstrates enterprise deployment patterns:
 # - Multiple environments (dev, test, staging, production)
-# - Deployment groups for organizing related deployments
-# - Auto-approval rules with progressive restrictions
-# - Published outputs for linked Stacks
 # - Local values for DRY configuration
+# - Deployment groups with auto-approval rules (HCP Terraform Premium)
+# - Published outputs for linked Stacks (HCP Terraform Premium)
 # ============================================================================
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
@@ -45,109 +44,95 @@ locals {
 }
 
 # ============================================================================
-# DEPLOYMENT GROUPS
+# AUTO-APPROVAL RULES (HCP Terraform Premium)
 # ============================================================================
-# Best Practice: Always create deployment groups, even for single deployments
-# This enables future auto-approval rules and maintains consistent patterns
+# Define these BEFORE deployment_group blocks that reference them
 
-# ----------------------------------------------------------------------------
-# Development Deployment Group
-# ----------------------------------------------------------------------------
-deployment_group "development" {
-  deployments = [
-    deployment.dev,
-    deployment.test
-  ]
-}
-
-# ----------------------------------------------------------------------------
-# Pre-Production Deployment Group
-# ----------------------------------------------------------------------------
-deployment_group "pre_production" {
-  deployments = [
-    deployment.staging
-  ]
-}
-
-# ----------------------------------------------------------------------------
-# Production Deployment Group
-# ----------------------------------------------------------------------------
-deployment_group "production" {
-  deployments = [
-    deployment.production
-  ]
-}
+# # Development: Liberal auto-approval for rapid iteration
+# deployment_auto_approve "dev_rapid_iteration" {
+#   check {
+#     condition = context.plan.applyable
+#     reason    = "Plan must be applyable"
+#   }
+#   
+#   check {
+#     condition = context.plan.changes.total <= 50
+#     reason    = "Development allows up to 50 changes (current: ${context.plan.changes.total})"
+#   }
+# }
+# 
+# # Test: Moderate guardrails - no resource deletion
+# deployment_auto_approve "test_safe_changes" {
+#   check {
+#     condition = context.plan.applyable
+#     reason    = "Plan must be applyable"
+#   }
+#   
+#   check {
+#     condition = context.plan.changes.remove == 0
+#     reason    = "Test environment cannot auto-approve resource deletions"
+#   }
+#   
+#   check {
+#     condition = context.plan.changes.total <= 20
+#     reason    = "Test allows up to 20 changes (current: ${context.plan.changes.total})"
+#   }
+# }
+# 
+# # Staging: Strict guardrails with business hours enforcement
+# deployment_auto_approve "staging_gated" {
+#   check {
+#     condition = context.plan.applyable
+#     reason    = "Plan must be applyable"
+#   }
+#   
+#   check {
+#     condition = context.plan.changes.remove == 0
+#     reason    = "Staging cannot auto-approve resource deletions"
+#   }
+#   
+#   check {
+#     condition = context.plan.changes.total <= 10
+#     reason    = "Staging allows maximum 10 changes (current: ${context.plan.changes.total})"
+#   }
+#   
+#   check {
+#     condition = context.plan.timestamp.hour >= 9 && context.plan.timestamp.hour < 17
+#     reason    = "Staging only auto-approves during business hours (9 AM - 5 PM UTC)"
+#   }
+# }
 
 # ============================================================================
-# AUTO-APPROVAL RULES
+# DEPLOYMENT GROUPS (HCP Terraform Premium)
 # ============================================================================
-# Progressive restrictions from development to production
+# Groups apply auto_approve_checks to their member deployments
+# Deployments join groups via: deployment_group = deployment_group.development
 
-# ----------------------------------------------------------------------------
-# Development Auto-Approval
-# ----------------------------------------------------------------------------
-# Liberal auto-approval for development environments
-# Allows up to 50 changes automatically
-deployment_auto_approve "development_changes" {
-  deployment_group = deployment_group.development
-  
-  check {
-    condition = context.plan.applyable
-    reason    = "Plan must be successful without errors"
-  }
-  
-  check {
-    condition = context.plan.changes.total <= 50
-    reason    = "Development environments limited to 50 changes for safety"
-  }
-}
-
-# ----------------------------------------------------------------------------
-# Staging Auto-Approval
-# ----------------------------------------------------------------------------
-# More restrictive: no deletions, smaller change limit, business hours only
-deployment_auto_approve "staging_safe_changes" {
-  deployment_group = deployment_group.pre_production
-  
-  check {
-    condition = context.plan.applyable
-    reason    = "Plan must be successful"
-  }
-  
-  check {
-    condition = context.plan.changes.remove == 0
-    reason    = "Staging environment cannot auto-approve resource deletions"
-  }
-  
-  check {
-    condition = context.plan.changes.total <= 10
-    reason    = "Staging limited to 10 changes maximum"
-  }
-  
-  check {
-    condition = context.plan.timestamp.hour >= 9 && context.plan.timestamp.hour <= 17
-    reason    = "Staging changes only approved during business hours (9 AM - 5 PM UTC)"
-  }
-}
-
-# ----------------------------------------------------------------------------
-# Production Auto-Approval
-# ----------------------------------------------------------------------------
-# Most restrictive: manual approval required for all changes
-# This demonstrates the pattern even though it effectively requires manual approval
-deployment_auto_approve "production_manual_only" {
-  deployment_group = deployment_group.production
-  
-  check {
-    condition = context.plan.applyable
-    reason    = "Plan must be successful"
-  }
-  
-  check {
-    condition = context.plan.changes.total == 0
-    reason    = "Production requires manual approval for all changes"
-  }
-}
+# # Development Group: dev + test deployments with liberal auto-approval
+# deployment_group "development" {
+#   auto_approve_checks = [
+#     deployment_auto_approve.dev_rapid_iteration
+#   ]
+# }
+# 
+# # Test Group: test deployment with moderate guardrails
+# deployment_group "test" {
+#   auto_approve_checks = [
+#     deployment_auto_approve.test_safe_changes
+#   ]
+# }
+# 
+# # Pre-Production Group: staging deployment with strict guardrails
+# deployment_group "pre_production" {
+#   auto_approve_checks = [
+#     deployment_auto_approve.staging_gated
+#   ]
+# }
+# 
+# # Production Group: NO auto_approve_checks = manual approval required
+# deployment_group "production" {
+#   # No auto_approve_checks means manual approval required for production
+# }
 
 # ============================================================================
 # DEPLOYMENTS
@@ -252,55 +237,57 @@ deployment "production" {
       backup_policy  = "continuous"
     }
   }
+  
+  # deployment_group = deployment_group.production  # Uncomment for HCP Terraform
 }
 
 # ============================================================================
-# PUBLISHED OUTPUTS FOR LINKED STACKS
+# PUBLISHED OUTPUTS FOR LINKED STACKS (HCP Terraform Premium)
 # ============================================================================
-# These outputs can be consumed by downstream Stacks using upstream_input blocks
 
-publish_output "dev_pet_name" {
-  type  = string
-  value = deployment.dev.pet_name
-}
-
-publish_output "dev_environment_metadata" {
-  type = object({
-    environment   = string
-    tier          = string
-    is_production = bool
-    pet_name      = string
-  })
-  value = deployment.dev.deployment_metadata
-}
-
-publish_output "test_pet_name" {
-  type  = string
-  value = deployment.test.pet_name
-}
-
-publish_output "staging_pet_name" {
-  type  = string
-  value = deployment.staging.pet_name
-}
-
-publish_output "production_pet_name" {
-  type  = string
-  value = deployment.production.pet_name
-}
-
-publish_output "all_environments" {
-  type = map(string)
-  value = {
-    dev        = deployment.dev.pet_name
-    test       = deployment.test.pet_name
-    staging    = deployment.staging.pet_name
-    production = deployment.production.pet_name
-  }
-}
+# # Individual environment outputs
+# publish_output "dev_pet_name" {
+#   type  = string
+#   value = deployment.dev.pet_name
+# }
+# 
+# publish_output "dev_environment_metadata" {
+#   type = object({
+#     environment   = string
+#     tier          = string
+#     is_production = bool
+#     pet_name      = string
+#   })
+#   value = deployment.dev.deployment_metadata
+# }
+# 
+# publish_output "test_pet_name" {
+#   type  = string
+#   value = deployment.test.pet_name
+# }
+# 
+# publish_output "staging_pet_name" {
+#   type  = string
+#   value = deployment.staging.pet_name
+# }
+# 
+# publish_output "production_pet_name" {
+#   type  = string
+#   value = deployment.production.pet_name
+# }
+# 
+# publish_output "all_environments" {
+#   type = map(string)
+#   value = {
+#     dev        = deployment.dev.pet_name
+#     test       = deployment.test.pet_name
+#     staging    = deployment.staging.pet_name
+#     production = deployment.production.pet_name
+#   }
+# }
 
 # ============================================================================
-# OPTIONAL: UPSTREAM INPUT EXAMPLE
+# UPSTREAM INPUT EXAMPLE (HCP Terraform Premium)
 # ============================================================================
 # Uncomment to demonstrate consuming outputs from another Stack
 #
